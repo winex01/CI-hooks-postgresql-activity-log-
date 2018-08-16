@@ -4,7 +4,7 @@ class CI_Hook_Log
 {
     private $CI;
 
-    private $db_log;
+    private $dbLog;
 
     public function __construct()
     {
@@ -12,10 +12,9 @@ class CI_Hook_Log
 
         $this->CI->config->load("log");
 
-        $this->db_log = $this->CI->load->database('log', TRUE);
+        $this->dbLog = $this->CI->load->database('log', TRUE);
 
         $this->createDatabaseIfNotExist();
-
     }
 
     public function log_activity()
@@ -64,82 +63,64 @@ class CI_Hook_Log
             unset($data['post_data']);
         }
 
-        $this->db_log->insert('setup.activity_log', $data);
+        $this->dbLog->insert('setup.activity_log', $data);
 
     }//end log_activity
 
     public function log_query()
     {
-        $session_id = $this->CI->session->userdata("session_id");
-        $is_logged  = $this->CI->config->item("db_log_activity_query");
-        $queries    = $this->CI->db->queries;
+        /* Additional step so that guest will also be logged */
+        $username   = $this -> CI -> session -> userdata("username") ? $this -> CI -> session -> userdata("username") : "guest";
+        $user_agent = $this -> CI -> session -> userdata("user_agent");
+        $ip_address = $this -> CI -> session -> userdata("ip_address");
 
-        if ($is_logged && count($queries) > 0 && $session_id) {
+        $is_logged  = $this -> CI -> config -> item("db_log_activity_query");
+        $queries    = $this -> CI -> db -> queries;
 
-            $username   = $this->CI->session->userdata("username");
-            $user_agent = $this->CI->session->userdata("user_agent");
-            $ip_address = $this->CI->session->userdata("ip_address");        
-            $time_stamp = date("c");
-            
+        if ($is_logged && count($queries) > 0 && $username) {
+            $data = array();
+
             foreach ($queries as $query) {
-                $query = str_replace('"', '', $query);
-                $query = str_replace("'", "\'", $query);
-                
-                $sql = "INSERT INTO setup.log_query( 
-                                             username, 
-                                             ip_address, 
-                                             user_agent, 
-                                             time_stamp, 
-                                             query) 
-                                      VALUES(
-                                            '".$username."',
-                                            '".$ip_address."',
-                                            '".$user_agent."',
-                                            '".$time_stamp."',                                            
-                                            E'".$query."')";
-
-                $this -> db_log -> query($sql);
+                $data[] = array(
+                    "username"      => $username,
+                    "user_agent"    => $user_agent,
+                    "ip_address"    => $ip_address,
+                    "query"         => $query
+                );
             }
+
+            $dbLog = $this -> CI -> load -> database("log", TRUE);
+
+            $table = $this -> CI -> config -> item("sess_log_schema_query");
+
+            $dbLog -> insert_batch($table, $data);
+
+            $dbLog -> close();
         }
-    }//end log_query
+    }
 
     private function createDatabaseIfNotExist()
     {
         // Load database utility
-        $this -> CI -> load -> dbutil();
-
-        $dbname = $this->db_log->database;
-        $dbuser = $this->db_log->username;
+        $this->CI->load->dbutil();
 
         // Check if log database exists
-        if (! $this->CI->dbutil->database_exists($this->db_log->database)) {
-            $this->CI->load->helper("log");
+        if (! $this->CI->dbutil->database_exists($this->dbLog->database)) {
 
-            $sql = "CREATE DATABASE $dbname 
+            $sql = "CREATE DATABASE \"".$this->dbLog->database."\" 
                     WITH ENCODING='UTF8'
-                         OWNER $dbuser;";
+                         OWNER ".$this->dbLog->username.";";
 
-            try {
-                // Create log database using the current database settings of the loaded log database
-                $con = pg_connect("dbname=template1 user=".$dbuser." password=password");
-                
-                pg_query($con, $sql);
-            
-            } catch (Exception $e) {
-                
-                var_dump($e->getMessage()); die;
-            } finally {
+            $this->executeQuery($sql);
 
-                pg_close($con);
-            }
         }
 
         // create table
-        $this->createTableIfNotExist($dbname, $dbuser);
+        $this->createTableIfNotExist();
         
     }// end createDatabaseIfNotExist
 
-    private function createTableIfNotExist($dbname, $dbuser = 'root')
+    private function createTableIfNotExist()
     {
         $sql =  "
                 CREATE SCHEMA IF NOT EXISTS setup;
@@ -163,22 +144,32 @@ class CI_Hook_Log
                 ALTER TABLE IF EXISTS setup.activity_log
                     OWNER TO postgres;";
 
-        try {
-            $con = pg_connect("dbname=".$dbname." user=".$dbuser." password=password");
-
-            pg_query($con, $sql);
-
-        } catch (Exception $e) {
-
-            var_dump($e->getMessage()); die;
-        
-        } finally {
-        
-            pg_close($con);
-        
-        }
+        $this->executeQuery($sql, $this->dbLog->database);
 
     }//end createTableIfNotExist
+
+    private function executeQuery($sql, $dbName = 'template1')
+    {
+
+        $con = pg_connect("
+            host=".$this->dbLog->hostname." 
+            port=".$this->dbLog->port." 
+            dbname=".$dbName." 
+            user=".$this->dbLog->username." 
+            password=".$this->dbLog->password
+        );
+
+        if(pg_connection_status($con) !== PGSQL_CONNECTION_OK) {
+            echo "Failed to connect to database.\n";
+            exit(1);
+        }
+            
+        pg_query($con, $sql);
+    
+        pg_close($con);
+
+    }//end executeQuery
 }
+
 /* End of file CI_hook_log.php */
 /* Location: ./application/hooks/CI_hook_log.php */
