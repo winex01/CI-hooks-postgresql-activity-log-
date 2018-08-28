@@ -27,6 +27,12 @@ class CI_Hook_Log
             return;
         }
 
+        $is_logged  = $this -> CI -> config -> item("db_log_activity_activity");
+        
+        if (!$is_logged) {
+            return;
+        }
+
         $application = $this->CI->config->item('index_page');
         
         $module      = getURI(0);
@@ -62,7 +68,7 @@ class CI_Hook_Log
         if (empty($post_data) ) {
             unset($data['post_data']);
         }
-
+        
         $this->dbLog->insert('setup.activity_log', $data);
 
     }//end log_activity
