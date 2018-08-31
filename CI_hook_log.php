@@ -40,7 +40,16 @@ class CI_Hook_Log
         $action      = getURI(2) . ' '. getURI(3) . ' '. getURI(4) . ' '. getURI(5) . ' '. getURI(6);
         
         $action      =( empty(getURI(2)) ) ? 'view' : $action;
+
         
+        // session is created in ess controller
+        if ($this->CI->session->userdata('directory_action')) {
+            $action = $this->CI->session->userdata('directory_action'); 
+
+            $this->CI->session->unset_userdata('directory_action');
+        }
+
+
         $post_data   = $this->CI->input->post();
         
         $post_data   = (empty($post_data) || !$post_data) ? null : json_encode($post_data);
